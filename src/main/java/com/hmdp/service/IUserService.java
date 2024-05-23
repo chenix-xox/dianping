@@ -26,10 +26,12 @@ public interface IUserService extends IService<User> {
     Result sendCode(String phone, HttpSession session);
 
     /**
-     * 登录
-     * @param loginForm
-     * @param session
-     * @return
+     * @Description: 登录
+     * @Param: loginForm
+     * @Param: session
+     * @Return: com.hmdp.dto.Result
+     * @Author: chentianhai.cth
+     * @Date: 2024/5/23 11:53
      */
     Result login(LoginFormDTO loginForm, HttpSession session);
 }
