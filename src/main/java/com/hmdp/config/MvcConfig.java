@@ -16,7 +16,13 @@ public class MvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new LoginInterceptor(stringRedisTemplate))
+        // 刷新token
+        registry.addInterceptor(new RefreshTokenInterceptor(stringRedisTemplate))
+                .addPathPatterns("/**")
+                .order(0);
+
+        // 登录验证
+        registry.addInterceptor(new LoginInterceptor())
                 .excludePathPatterns(
                         //登录
                         "/user/login",
@@ -27,6 +33,7 @@ public class MvcConfig implements WebMvcConfigurer {
                         "/shop-type/**",
                         "/upload/**",
                         "/blog/hot"
-                );
+                ).order(1);
+
     }
 }

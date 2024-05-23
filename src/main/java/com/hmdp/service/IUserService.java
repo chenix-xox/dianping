@@ -26,7 +26,7 @@ public interface IUserService extends IService<User> {
     Result sendCode(String phone, HttpSession session);
 
     /**
-     * @Description: 登录
+     * @Description: 登录..
      * @Param: loginForm
      * @Param: session
      * @Return: com.hmdp.dto.Result
