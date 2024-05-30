@@ -35,41 +35,98 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    /**
-     *TODO
-     * step1: 提交商铺id，从Redis中查询商铺缓存
-     * step2: 判断缓存是否命中
-     *  2.1 命中 -> 返回数据
-     *  2.2 未命中 -> 尝试获取互斥锁 -> 是否获取成功
-     *      - 失败: 休眠一会，从step2重新开始执行
-     *      - 成功: 根据ID查询数据库信息 -> 查询到的信息写入Redis -> 释放互斥锁
-     */
     @Override
     public Result queryById(Long id) {
+        // 缓存穿透
+        // Shop shop = queryWithPassThrough(id);
+
+        // 互斥锁解决缓存击穿
+        Shop shop = queryWithMutex(id);
+        if (shop == null){
+            return Result.fail("店铺不存在");
+        }
+
+        // 返回
+        return Result.ok(shop);
+    }
+
+    /**
+     * @description 互斥锁解决缓存击穿 -> 同时缓存了空值解决缓存穿透
+     * @param id 商铺ID
+     * @return com.hmdp.entity.Shop
+     * @author chentianhai.cth
+     * @date 2024/5/30 14:15
+     */
+    public Shop queryWithMutex(Long id) {
+        String key = CACHE_SHOP_KEY + id;
+        // step1: 提交商铺id，从Redis中查询商铺缓存
+        String shopRedisResult = stringRedisTemplate.opsForValue().get(key);
+        // step2: 判断缓存是否命中 -> 2.1 命中，直接返回商铺信息
+        if (StrUtil.isNotBlank(shopRedisResult)) {
+            return JSONUtil.toBean(shopRedisResult, Shop.class);
+        }
+
+        // 不为null，说明redis中还是查到了，只是会被判断为blank，那就说明是空字符串
+        // -> 是否命中空字符串，命中了空字符串就返回null
+        if (shopRedisResult != null) {
+            return null;
+        }
+
+        Shop shopDbResult = null;
+        try {
+            // 2.2 未命中 -> 尝试获取互斥锁 -> 是否获取成功
+            if (!tryLock(LOCK_SHOP_KEY + id)) {
+                // 失败: 休眠一会，从step2重新开始执行（此处重试整个方法）
+                Thread.sleep(50);
+                return queryWithMutex(id);
+            }
+            // 成功: 根据ID查询数据库信息 -> 查询到的信息写入Redis -> 释放互斥锁
+            shopDbResult = this.getById(id);
+            if (shopDbResult == null) {
+                stringRedisTemplate.opsForValue().set(key, "", CACHE_NULL_TTL, TimeUnit.MINUTES);
+                return null;
+            }
+            stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(shopDbResult), CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } finally {
+            // 释放互斥锁
+            unLock(LOCK_SHOP_KEY + id);
+        }
+        return shopDbResult;
+    }
+
+    /**
+     * @description 仅解决缓存穿透，根据ID查询商铺信息
+     * @param id 商铺ID
+     * @return com.hmdp.entity.Shop
+     * @author chentianhai.cth
+     * @date 2024/5/30 14:15
+     */
+    public Shop queryWithPassThrough(Long id) {
         String key = CACHE_SHOP_KEY + id;
         // 提交商铺id，从Redis中查询商铺缓存
         String shopRedisResult = stringRedisTemplate.opsForValue().get(key);
         // 判断缓存是否命中 -> 命中，直接返回商铺信息
         if (StrUtil.isNotBlank(shopRedisResult)) {
-            return Result.ok(JSONUtil.toBean(shopRedisResult, Shop.class));
+            return JSONUtil.toBean(shopRedisResult, Shop.class);
         }
 
         // 不为null，说明redis中还是查到了，只是会被判断为blank，那就说明是空字符串
         if (shopRedisResult != null) {
-            return Result.fail("店铺不存在");
+            return null;
         }
 
         // 未命中， 查数据库 -> 如果数据库中为空，缓存空值，解决缓存穿透，返回fail；
         Shop shopDbResult = this.getById(id);
         if (shopDbResult == null) {
             stringRedisTemplate.opsForValue().set(key, "", CACHE_NULL_TTL, TimeUnit.MINUTES);
-            return Result.fail("店铺不存在");
+            return null;
         }
 
-        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(shopDbResult));
-        stringRedisTemplate.expire(key, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(shopDbResult), CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
-        return Result.ok(shopDbResult);
+        return shopDbResult;
     }
 
     @Override
@@ -88,9 +145,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     }
 
     /**
-     * @description 获取互斥锁，10s过期
      * @param key 锁的key
      * @return boolean
+     * @description 获取互斥锁，10s过期
      * @author chentianhai.cth
      * @date 2024/5/30 14:03
      */
@@ -100,8 +157,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     }
 
     /**
-     * @description 释放锁
      * @param key 钥匙放的锁key
+     * @description 释放锁
      * @author chentianhai.cth
      * @date 2024/5/30 14:04
      */
