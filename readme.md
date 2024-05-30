@@ -4,6 +4,14 @@
 
 [<img src="https://s21.ax1x.com/2024/05/23/pkQKRmR.png" alt="pkQKRmR.png" style="zoom: 33%;" />](https://imgse.com/i/pkQKRmR)
 
+
+
+
+
+
+
+
+
 业务场景：
 
 - 低一致性需求：使用内存淘汰机制。例如店铺类型的查询缓存
@@ -119,6 +127,8 @@
 
 #### 互斥锁解决方案
 
+执行流程在上方
+
 **简单思路：** 使用redis的setnx，表示只有当key不存在的时候，才能set成功
 
 **一定要设置过期时间**
@@ -131,6 +141,34 @@
 - setnx lock 3      --失败，返回0
 - get lock          --返回1（setnx lock 1 的值）
 - del lock			--释放锁
+```
+
+
+
+#### 逻辑过期解决方案
+
+执行流程在上方
+
+添加过期时间字段，为了避免对原来的对象实体做修改，创建一个新的对象实体类
+
+> 组合优先于继承？
+
+```java
+// 组合版
+@Data
+public class RedisData{
+    private LocalDateTime expireTime;
+    private Object data;
+}
+```
+
+```
+// 泛型版
+@Data
+public class RedisData<T>{
+    private LocalDateTime expireTime;
+    private T data;
+}
 ```
 
 
