@@ -35,39 +35,37 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    /**
+     *TODO
+     * step1: 提交商铺id，从Redis中查询商铺缓存
+     * step2: 判断缓存是否命中
+     *  2.1 命中 -> 返回数据
+     *  2.2 未命中 -> 尝试获取互斥锁 -> 是否获取成功
+     *      - 失败: 休眠一会，从step2重新开始执行
+     *      - 成功: 根据ID查询数据库信息 -> 查询到的信息写入Redis -> 释放互斥锁
+     */
     @Override
     public Result queryById(Long id) {
         String key = CACHE_SHOP_KEY + id;
-        // 1. 提交商铺ID
-        // 2. 从Redis中查询商铺缓存
-        // 3. 判断缓存是否命中
-        //      3.1 未命中，查询数据库，写入Redis -> 没查到就返回404
-        //      3.2 命中，直接返回商铺信息
+        // 提交商铺id，从Redis中查询商铺缓存
         String shopRedisResult = stringRedisTemplate.opsForValue().get(key);
+        // 判断缓存是否命中 -> 命中，直接返回商铺信息
         if (StrUtil.isNotBlank(shopRedisResult)) {
-            // 命中
-            Shop shop = JSONUtil.toBean(shopRedisResult, Shop.class);
-            return Result.ok(shop);
+            return Result.ok(JSONUtil.toBean(shopRedisResult, Shop.class));
         }
 
-        if (shopRedisResult != null){
-            // 不为null，可以是空字符串
-            // 为空字符串说明命中缓存的空数据了
-            // 返回错误信息，不用再查询数据库了
+        // 不为null，说明redis中还是查到了，只是会被判断为blank，那就说明是空字符串
+        if (shopRedisResult != null) {
             return Result.fail("店铺不存在");
         }
 
-        // 未命中， 查数据库
-        //      -> 如果数据库中为空，直接返回fail；
-        //      -> 不为空 就存入缓存，然后返回
+        // 未命中， 查数据库 -> 如果数据库中为空，缓存空值，解决缓存穿透，返回fail；
         Shop shopDbResult = this.getById(id);
         if (shopDbResult == null) {
-            // 缓存空值，解决缓存穿透
             stringRedisTemplate.opsForValue().set(key, "", CACHE_NULL_TTL, TimeUnit.MINUTES);
             return Result.fail("店铺不存在");
         }
 
-        // 存入缓存
         stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(shopDbResult));
         stringRedisTemplate.expire(key, CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
@@ -78,7 +76,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Transactional(rollbackFor = Exception.class)
     public Result updateShopById(Shop shop) {
         Long shopId = shop.getId();
-        if (shopId == null){
+        if (shopId == null) {
             return Result.fail("店铺ID不能为空");
         }
         // 先更新
@@ -87,5 +85,27 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // 再删除缓存
         stringRedisTemplate.delete(CACHE_SHOP_KEY + shopId);
         return Result.ok();
+    }
+
+    /**
+     * @description 获取互斥锁，10s过期
+     * @param key 锁的key
+     * @return boolean
+     * @author chentianhai.cth
+     * @date 2024/5/30 14:03
+     */
+    private boolean tryLock(String key) {
+        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
+        return Boolean.TRUE.equals(flag);
+    }
+
+    /**
+     * @description 释放锁
+     * @param key 钥匙放的锁key
+     * @author chentianhai.cth
+     * @date 2024/5/30 14:04
+     */
+    private void unLock(String key) {
+        stringRedisTemplate.delete(key);
     }
 }
