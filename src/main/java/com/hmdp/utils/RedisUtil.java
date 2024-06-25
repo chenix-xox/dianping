@@ -167,7 +167,8 @@ public class RedisUtil {
         CACHE_REBUILD_EXECUTOR.submit(() -> {
             try {
                 // 重建缓存
-                this.saveShop2Redis(keyPrefix, id, 20L, dbFallback);
+                R rr = dbFallback.apply(id);
+                this.setWithLogicalExpire(key, rr, time, unit);
             } catch (Exception e) {
                 throw new RuntimeException(e);
             } finally {
@@ -197,22 +198,5 @@ public class RedisUtil {
      */
     private void unLock(String key) {
         stringRedisTemplate.delete(key);
-    }
-
-    /**
-     * @param id            店铺ID
-     * @param expireSeconds 基于当前时间增加的秒数，表明在多少秒后过期
-     * @description 添加逻辑过时间，保存商铺信息到redis
-     * @author chentianhai.cth
-     * @date 2024/5/30 15:05
-     */
-    public <ID, R> void saveShop2Redis(String keyPrefix, ID id, Long expireSeconds, Function<ID, R> dbFallback) {
-        R r = dbFallback.apply(id);
-        RedisData<R> redisData = new RedisData<>();
-        redisData.setData(r);
-        // 移除纳秒
-        redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds).truncatedTo(ChronoUnit.SECONDS));
-        // 写入redis
-        stringRedisTemplate.opsForValue().set(keyPrefix + id, JSON.toJSONString(redisData));
     }
 }
