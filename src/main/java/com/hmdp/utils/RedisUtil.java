@@ -10,6 +10,9 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -23,6 +26,8 @@ import static com.hmdp.utils.RedisConstants.*;
 @Slf4j
 @Component
 public class RedisUtil {
+    // 创建线程池
+    private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
     private final StringRedisTemplate stringRedisTemplate;
 
@@ -77,20 +82,20 @@ public class RedisUtil {
     }
 
     /**
-     * @description 使用缓存空值的方法，解决缓存穿透
-     * @param keyPrefix key的前缀
-     * @param id ID值
-     * @param type 转换数据类型
+     * @param keyPrefix  key的前缀
+     * @param id         ID值
+     * @param type       转换数据类型
      * @param dbFallback 从redis查询失败时，执行的方法 - 从数据库查询
      * @return R
+     * @description 使用缓存空值的方法，解决缓存穿透
      * @author chentianhai.cth
      * @date 2024/6/24 18:32
      */
-    public <R, ID> R queryWithPassThrough(String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback) {
+    public <R, ID> R queryWithPassThrough(String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback, Long time, TimeUnit unit) {
         String key = keyPrefix + id;
         // 从Redis中查询缓存json
         String json = stringRedisTemplate.opsForValue().get(key);
-        // 判断缓存是否命中 -> 命中，直接返回商铺信息
+        // 判断缓存是否命中 -> 命中，直接返回
         if (StrUtil.isNotBlank(json)) {
             return JSONUtil.toBean(json, type);
         }
@@ -107,27 +112,107 @@ public class RedisUtil {
             return null;
         }
 
-        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(r), CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        this.set(key, r, time, unit);
         return r;
     }
 
-//    /**
-//     * @param key 键
-//     * @param <T> 泛型
-//     * @return T
-//     * @description 方法4：根据指定的ky查询缓存，并反序列化为指定类型，需要利用逻辑过期解决缓存击穿问题
-//     * @author chentianhai.cth
-//     * @date 2024/6/24 17:49
-//     */
-//    public <T> T get2(String key, Class<T> clazz) {
-//        String json = stringRedisTemplate.opsForValue().get(key);
-//        RedisData redisData = JSONUtil.toBean(json, RedisData.class);
-//        LocalDateTime expireTime = redisData.getExpireTime();
-//        if (expireTime.isAfter(LocalDateTime.now())) {
-//            // 未过期
-//            return JSONUtil.toBean(JSON.toJSONString(redisData.getData()), clazz);
-//        }
-//        // 过期了，重建缓存
-//
-//    }
+
+    /**
+     * @param key 键
+     * @param <T> 泛型
+     * @return T
+     * @description 方法4：根据指定的ky查询缓存，并反序列化为指定类型，需要利用逻辑过期解决缓存击穿问题
+     * @author chentianhai.cth
+     * @date 2024/6/24 17:49
+     */
+    public <R, ID> R queryWithLogicalExpire(
+            String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback,
+            Long time, TimeUnit unit, String lockKeyPrefix) {
+        /*
+         * step1: 提交商铺id，从redis查询商铺缓存
+         * step2: 判断缓存是否命中
+         *  - 未命中：返回空
+         *  - 命中：判断缓存是否过期
+         *     - 未过期：返回数据
+         *     - 过期：尝试获取互斥锁是否成功
+         *        - 成功：开启独立线程，从数据库中查询，并缓存新数据，然后释放锁
+         *        - 失败：返回数据（过期数据）
+         */
+        String key = keyPrefix + id;
+        // 提交商铺id，从Redis中查询商铺缓存
+        String json = stringRedisTemplate.opsForValue().get(key);
+
+        // 判断缓存是否命中 -> 未命中，直接返回为空
+        if (StrUtil.isBlank(json)) {
+            return null;
+        }
+
+        // 命中 -> 判断缓存是否过期
+        RedisData redisData = JSONUtil.toBean(json, RedisData.class);
+        R r = JSONUtil.toBean(JSON.toJSONString(redisData.getData()), type);
+
+        if (redisData.getExpireTime().isAfter(LocalDateTime.now())) {
+            // 未过期，直接返回商铺信息
+            System.out.println("未过期");
+            return r;
+        }
+
+        System.out.println("已过期");
+        // 已过期
+        if (!tryLock(lockKeyPrefix + id)) {
+            // 获取锁失败，返回过期数据
+            System.out.println("获取锁失败");
+            return r;
+        }
+        CACHE_REBUILD_EXECUTOR.submit(() -> {
+            try {
+                // 重建缓存
+                this.saveShop2Redis(keyPrefix, id, 20L, dbFallback);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            } finally {
+                unLock(lockKeyPrefix + id);
+            }
+        });
+        return r;
+    }
+
+    /**
+     * @param key 锁的key
+     * @return boolean
+     * @description 获取互斥锁，10s过期
+     * @author chentianhai.cth
+     * @date 2024/5/30 14:03
+     */
+    private boolean tryLock(String key) {
+        Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
+        return Boolean.TRUE.equals(flag);
+    }
+
+    /**
+     * @param key 钥匙放的锁key
+     * @description 释放锁
+     * @author chentianhai.cth
+     * @date 2024/5/30 14:04
+     */
+    private void unLock(String key) {
+        stringRedisTemplate.delete(key);
+    }
+
+    /**
+     * @param id            店铺ID
+     * @param expireSeconds 基于当前时间增加的秒数，表明在多少秒后过期
+     * @description 添加逻辑过时间，保存商铺信息到redis
+     * @author chentianhai.cth
+     * @date 2024/5/30 15:05
+     */
+    public <ID, R> void saveShop2Redis(String keyPrefix, ID id, Long expireSeconds, Function<ID, R> dbFallback) {
+        R r = dbFallback.apply(id);
+        RedisData<R> redisData = new RedisData<>();
+        redisData.setData(r);
+        // 移除纳秒
+        redisData.setExpireTime(LocalDateTime.now().plusSeconds(expireSeconds).truncatedTo(ChronoUnit.SECONDS));
+        // 写入redis
+        stringRedisTemplate.opsForValue().set(keyPrefix + id, JSON.toJSONString(redisData));
+    }
 }

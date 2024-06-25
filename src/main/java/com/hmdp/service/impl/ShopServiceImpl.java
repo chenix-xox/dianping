@@ -13,6 +13,7 @@ import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.CodeUtils;
 import com.hmdp.utils.RedisData;
+import com.hmdp.utils.RedisUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -41,16 +42,22 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    @Autowired
+    private RedisUtil redisUtil;
+
     @Override
     public Result queryById(Long id) {
-        // 缓存穿透
+        // 缓存空值 解决缓存穿透
         // Shop shop = queryWithPassThrough(id);
+        // Shop shop = redisUtil.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
         // 互斥锁解决缓存击穿
         // Shop shop = queryWithMutex(id);
 
         // 逻辑过期解决缓存击穿
-        Shop shop = queryWithLogicalExpire(id);
+        // Shop shop = queryWithLogicalExpire(id);
+        Shop shop = redisUtil.queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES, LOCK_SHOP_KEY);
+
         if (shop == null) {
             return Result.fail("店铺不存在");
         }

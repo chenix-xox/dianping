@@ -243,9 +243,51 @@ public class RedisData<T>{
 
 **基于StringRedisTemplate封装一个缓存工具类，满足下列需求：**
 
-- 方法1：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置TTL过期时间
-- 方法2：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置逻辑过期时间，用于处理缓存击穿问题
-- 方法3：根据指定的ky查询缓存，并反序列化为指定类型，利用缓存空值的方式解决缓存穿透问题
+```java
+ private final StringRedisTemplate stringRedisTemplate;
+ public RedisUtil(StringRedisTemplate stringRedisTemplate) {
+     this.stringRedisTemplate = stringRedisTemplate;
+ }
+```
+
+- **方法1：**将任意Java对象序列化为json并存储在string类型的key中，并且可以设置**TTL过期时间**
+
+  ```java
+  /**
+   * @param key  键
+   * @param data 值
+   * @param time TTL过期时间
+   * @param unit 单位
+   * @description 【TTL过期set】方法1：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置TTL过期时间
+   * @author chentianhai.cth
+   * @date 2024/6/24 17:45
+   */
+  public void set(String key, Object data, Long time, TimeUnit unit) {
+      stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(data), time, unit);
+  }
+  ```
+
+- **方法2：**将任意Java对象序列化为json并存储在string类型的key中，并且可以**设置逻辑过期时间**，用于**处理缓存击穿**问题
+
+  ```java
+  /**
+   * @param key  键
+   * @param data 数据
+   * @param time 基于当前时间，多久后过期（秒）？
+   * @description 【逻辑过期set】方法2：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置逻辑过期时间，用于处理缓存击穿问题
+   * @author chentianhai.cth
+   * @date 2024/6/24 17:48
+   */
+  public <T> void setWithLogicalExpire(String key, T data, Long time, TimeUnit unit) {
+      RedisData<T> redisData = new RedisData<>();
+      redisData.setData(data);
+      redisData.setExpireTime(LocalDateTime.now().plusSeconds(unit.toSeconds(time)));
+      stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(redisData));
+  }
+  ```
+
+- **方法3：**根据指定的ky查询缓存，并反序列化为指定类型，利用**缓存空值**的方式**解决缓存穿透**问题
+
 - 方法4：根据指定的ky查询缓存，并反序列化为指定类型，需要利用逻辑过期解决缓存击穿问题
 
 
