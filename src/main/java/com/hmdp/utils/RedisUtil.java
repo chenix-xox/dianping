@@ -1,0 +1,133 @@
+package com.hmdp.utils;
+
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
+import com.alibaba.fastjson2.JSON;
+import com.hmdp.entity.Shop;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.Resource;
+import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+import static com.hmdp.utils.RedisConstants.*;
+
+/**
+ * @author chenix
+ * @createTime 2024.06.24 17:40
+ * @description
+ */
+@Slf4j
+@Component
+public class RedisUtil {
+
+    private final StringRedisTemplate stringRedisTemplate;
+
+    public RedisUtil(StringRedisTemplate stringRedisTemplate) {
+        this.stringRedisTemplate = stringRedisTemplate;
+    }
+
+    /**
+     * @param key  键
+     * @param data 值
+     * @param time TTL过期时间
+     * @param unit 单位
+     * @description 【TTL过期set】方法1：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置TTL过期时间
+     * @author chentianhai.cth
+     * @date 2024/6/24 17:45
+     */
+    public void set(String key, Object data, Long time, TimeUnit unit) {
+        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(data), time, unit);
+    }
+
+    /**
+     * @param key  键
+     * @param data 数据
+     * @param time 基于当前时间，多久后过期（秒）？
+     * @description 【逻辑过期set】方法2：将任意Java对象序列化为json并存储在string类型的key中，并且可以设置逻辑过期时间，用于处理缓存击穿问题
+     * @author chentianhai.cth
+     * @date 2024/6/24 17:48
+     */
+    public <T> void setWithLogicalExpire(String key, T data, Long time, TimeUnit unit) {
+        RedisData<T> redisData = new RedisData<>();
+        redisData.setData(data);
+        redisData.setExpireTime(LocalDateTime.now().plusSeconds(unit.toSeconds(time)));
+        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(redisData));
+    }
+
+    /**
+     * @param key 键
+     * @param <T> 泛型
+     * @return T
+     * @description 方法3：根据指定的ky查询缓存，并反序列化为指定类型，利用缓存空值的方式解决缓存穿透问题
+     * @author chentianhai.cth
+     * @date 2024/6/24 17:49
+     */
+    public <T> T get1(String key, Class<T> clazz) {
+        String json = stringRedisTemplate.opsForValue().get(key);
+        if (json == null) {
+            // 缓存空值，设置过期60s
+            stringRedisTemplate.opsForValue().set(key, "", 60L, TimeUnit.SECONDS);
+            return null;
+        }
+        return JSONUtil.toBean(json, clazz);
+    }
+
+    /**
+     * @description 使用缓存空值的方法，解决缓存穿透
+     * @param keyPrefix key的前缀
+     * @param id ID值
+     * @param type 转换数据类型
+     * @param dbFallback 从redis查询失败时，执行的方法 - 从数据库查询
+     * @return R
+     * @author chentianhai.cth
+     * @date 2024/6/24 18:32
+     */
+    public <R, ID> R queryWithPassThrough(String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback) {
+        String key = keyPrefix + id;
+        // 从Redis中查询缓存json
+        String json = stringRedisTemplate.opsForValue().get(key);
+        // 判断缓存是否命中 -> 命中，直接返回商铺信息
+        if (StrUtil.isNotBlank(json)) {
+            return JSONUtil.toBean(json, type);
+        }
+
+        // 不为null，说明redis中还是查到了，只是会被判断为blank，那就说明是空字符串
+        if (json != null) {
+            return null;
+        }
+
+        // 未命中， 查数据库 -> 如果数据库中为空，缓存空值，解决缓存穿透，返回fail；
+        R r = dbFallback.apply(id);
+        if (r == null) {
+            stringRedisTemplate.opsForValue().set(key, "", CACHE_NULL_TTL, TimeUnit.MINUTES);
+            return null;
+        }
+
+        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(r), CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        return r;
+    }
+
+//    /**
+//     * @param key 键
+//     * @param <T> 泛型
+//     * @return T
+//     * @description 方法4：根据指定的ky查询缓存，并反序列化为指定类型，需要利用逻辑过期解决缓存击穿问题
+//     * @author chentianhai.cth
+//     * @date 2024/6/24 17:49
+//     */
+//    public <T> T get2(String key, Class<T> clazz) {
+//        String json = stringRedisTemplate.opsForValue().get(key);
+//        RedisData redisData = JSONUtil.toBean(json, RedisData.class);
+//        LocalDateTime expireTime = redisData.getExpireTime();
+//        if (expireTime.isAfter(LocalDateTime.now())) {
+//            // 未过期
+//            return JSONUtil.toBean(JSON.toJSONString(redisData.getData()), clazz);
+//        }
+//        // 过期了，重建缓存
+//
+//    }
+}
