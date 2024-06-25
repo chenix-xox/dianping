@@ -64,30 +64,12 @@ public class RedisUtil {
     }
 
     /**
-     * @param key 键
-     * @param <T> 泛型
-     * @return T
-     * @description 方法3：根据指定的ky查询缓存，并反序列化为指定类型，利用缓存空值的方式解决缓存穿透问题
-     * @author chentianhai.cth
-     * @date 2024/6/24 17:49
-     */
-    public <T> T get1(String key, Class<T> clazz) {
-        String json = stringRedisTemplate.opsForValue().get(key);
-        if (json == null) {
-            // 缓存空值，设置过期60s
-            stringRedisTemplate.opsForValue().set(key, "", 60L, TimeUnit.SECONDS);
-            return null;
-        }
-        return JSONUtil.toBean(json, clazz);
-    }
-
-    /**
      * @param keyPrefix  key的前缀
      * @param id         ID值
      * @param type       转换数据类型
      * @param dbFallback 从redis查询失败时，执行的方法 - 从数据库查询
      * @return R
-     * @description 使用缓存空值的方法，解决缓存穿透
+     * @description 方法3：根据指定的ky查询缓存，并反序列化为指定类型，利用缓存空值的方式解决缓存穿透问题
      * @author chentianhai.cth
      * @date 2024/6/24 18:32
      */
