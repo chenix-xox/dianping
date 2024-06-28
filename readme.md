@@ -432,7 +432,13 @@ public class RedisData<T>{
 4. 递增：利于数据库创建索引
 5. 安全
 
+[![pky5DoV.png](https://s21.ax1x.com/2024/06/27/pky5DoV.png)](https://imgse.com/i/pky5DoV)
 
+**ID组成部分：**
+
+1. 符号位：1bit，永远为0
+2. 时间戳：31bit，以秒为单位，可使用69年
+3. 序列号：32bit，秒内的计数器，支持每秒产生2^32个不同的ID
 
 
 
