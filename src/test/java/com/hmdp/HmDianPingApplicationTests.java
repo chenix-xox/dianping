@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -27,17 +28,21 @@ class HmDianPingApplicationTests {
     }
 
     @Test
-    public void testIdWorker(){
+    public void testIdWorker() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(300);
+        long count = latch.getCount();
         Runnable task = () -> {
-            for (int i = 0; i < 1000; i++) {
+            System.out.println(Thread.currentThread().getName());
+            for (int i = 0; i < 100; i++) {
                 long id = redisIdWorker.nexId("order");
                 System.out.println(id);
             }
+            latch.countDown();
         };
         long begin = System.currentTimeMillis();
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < count; i++) {
             executorService.submit(task);
         }
-
+        latch.await();
     }
 }
