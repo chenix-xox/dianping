@@ -60,7 +60,7 @@ public class RedisUtil {
         RedisData<T> redisData = new RedisData<>();
         redisData.setData(data);
         redisData.setExpireTime(LocalDateTime.now().plusSeconds(unit.toSeconds(time)));
-        stringRedisTemplate.opsForValue().set(key, JSON.toJSONString(redisData));
+        stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(redisData));
     }
 
     /**

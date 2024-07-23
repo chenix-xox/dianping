@@ -12,9 +12,6 @@ import java.time.LocalDateTime;
  */
 @Data
 public class RedisData<T>{
-    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     private LocalDateTime expireTime;
-
     private T data;
 }
