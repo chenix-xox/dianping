@@ -17,4 +17,13 @@ public interface IVoucherService extends IService<Voucher> {
     Result queryVoucherOfShop(Long shopId);
 
     void addSeckillVoucher(Voucher voucher);
+
+    /**
+     * @description 用户抢购秒杀券
+     * @param voucherId 优惠券ID
+     * @return com.hmdp.dto.Result
+     * @author chentianhai.cth
+     * @date 2024/7/26 14:56
+     */
+    Result seckillVoucher(Long voucherId);
 }
