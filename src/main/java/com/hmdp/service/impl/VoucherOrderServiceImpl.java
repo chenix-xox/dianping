@@ -52,7 +52,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         }
 
         Long uid = UserHolder.getUser().getId();
-        // step3.1 一人一单，判断该人是否已存在订单
+        // step3.1 一人一单，判断该人是否已存在订单；新加的！
         int count = query().eq("user_id", uid)
                 .eq("voucher_id", voucherId)
                 .count();
