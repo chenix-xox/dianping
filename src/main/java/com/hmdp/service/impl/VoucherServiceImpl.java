@@ -80,9 +80,9 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
         // step4. 扣减库存
         boolean success = seckillVoucherService.update()
                 .setSql("stock = stock - 1")
-                .setSql("version = version + 1")
                 .eq("voucher_id", voucherId)
-                .eq("version", seckillVoucher.getVersion())
+                // 只有stock大于0，才能更新成功
+                .gt("stock", "0")
                 .update();
         if (!success) {
             // 扣减失败
