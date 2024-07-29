@@ -2,6 +2,7 @@ package com.hmdp.controller;
 
 
 import com.hmdp.dto.Result;
+import com.hmdp.service.IVoucherOrderService;
 import com.hmdp.service.IVoucherService;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,10 +24,10 @@ import javax.annotation.Resource;
 public class VoucherOrderController {
 
     @Resource
-    private IVoucherService voucherService;
+    private IVoucherOrderService voucherOrderService;
 
     @PostMapping("seckill/{id}")
     public Result seckillVoucher(@PathVariable("id") Long voucherId) {
-        return voucherService.seckillVoucher(voucherId);
+        return voucherOrderService.seckillVoucher(voucherId);
     }
 }
