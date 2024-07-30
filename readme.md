@@ -545,9 +545,105 @@ public long nexId(String keyPrefix){
 
 ### 一人一单
 
+**场景：**
+
+一个用户只允许抢购一张秒杀券
+
+**存在问题：**
+
+高并发情况，一个用户会同时抢购到多张券...
 
 
 
+#### 单机情况
+
+**解决方案：**加锁！！！
+
+———— synchronized（同步锁：若干个线程访问同一个对象时，只能有一个线程访问，其他线程阻塞）
+
+因为每次访问这个方法新建的uid不一定是同一个对象，值一样，对象不一样
+
+因此需要toString，并在字符串常量池中去比对，并使用intern()得到同一个对象
+
+**intern():** 将字符串放入常量池，如果常量池存在相同字符串，则返回池中的引用，确保锁的时同一个对象
+
+```java
+@Transactional(rollbackFor = Exception.class)
+public Result createVoucherOrder(Long voucherId) {
+    Long uid = UserHolder.getUser().getId();
+    synchronized (uid.toString().intern()){
+		// 具体同步逻辑...        
+        return ...;
+    }
+}
+```
+
+**以上锁，存在问题：**
+
+锁的作用范围是，Translation修饰事务中的一部分上锁
+
+可能存在事务还没提交，锁就释放，允许其他线程进来的情况
+
+还是有高并发问题
+
+**继续解决：** 让Translation修饰的整个事务都被锁住，直到事务执行完毕，再释放锁
+
+**改造如下：** 
+
+```java
+@Override
+public Result seckillVoucher(Long voucherId) {
+    ...;
+    Long uid = UserHolder.getUser().getId();
+    synchronized (uid.toString().intern()) {
+        return this.createVoucherOrder(voucherId);
+    }
+}
+
+@Transactional(rollbackFor = Exception.class)
+public Result createVoucherOrder(Long voucherId) {
+    ...;
+}
+```
+
+**新问题：**
+
+事务失效！
+
+**原因是：** 如果一个事务性方法在同一个类中被另一个非事务性方法调用，`@Transactional`注解将不会生效。
+
+这是因为Spring的事务管理是通过代理实现的，自调用不会通过代理，因此不会触发事务处理。
+
+**解决方案的核心思路：** 确保调用事务方法，是通过被Spring管理的类去调用
+
+1. 在自己的类中注入自己，然后 自己.xxxx() 去调用对应方法
+
+2. 在非事务方法中，new自己，然后同1即可
+
+3. 【需导入额外依赖及配置开启注解】使用代理对象，需要调用同一个类的事务方法时，获取当前代理对象，将事务方法交给Spring容器管理并调用
+
+   ```xml
+   <dependency>
+       <groupId>org.aspectj</groupId>
+       <artifactId>aspectjweaver</artifactId>
+   </dependency>
+   ```
+
+   ```java
+   @EnableAspectJAutoProxy(exposeProxy = true)
+   @SpringBootApplication
+   public class XxxApplication {
+       public static void main(String[] args) {
+           SpringApplication.run(XxxApplication.class, args);
+       }
+   }
+   ```
+
+4. 个人不喜欢的方法：创建一个新的Service，注入到当前类并调用（感觉不如直接代理..）
+
+
+
+**LAST：** 加锁只能解决单机情况下的一人一单并发安全问题，集群模式下就不行了
 
 
 

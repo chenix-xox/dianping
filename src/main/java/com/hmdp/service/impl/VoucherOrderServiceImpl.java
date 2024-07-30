@@ -9,6 +9,7 @@ import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.springframework.aop.framework.AopContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,7 +18,7 @@ import java.time.LocalDateTime;
 
 /**
  * <p>
- *  服务实现类
+ * 服务实现类
  * </p>
  *
  * @author 虎哥
@@ -35,7 +36,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private RedisIdWorker redisIdWorker;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Result seckillVoucher(Long voucherId) {
         // step1. 查询秒杀优惠券信息
         SeckillVoucher seckillVoucher = seckillVoucherService.getById(voucherId);
@@ -50,7 +50,16 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         if (seckillVoucher.getStock() < 1) {
             return Result.fail("库存不足");
         }
+        Long uid = UserHolder.getUser().getId();
+        synchronized (uid.toString().intern()) {
+            IVoucherOrderService voucherOrderServiceProxy = (IVoucherOrderService) AopContext.currentProxy();
+            return voucherOrderServiceProxy.createVoucherOrder(voucherId);
+        }
+    }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Result createVoucherOrder(Long voucherId) {
         Long uid = UserHolder.getUser().getId();
         // step3.1 一人一单，判断该人是否已存在订单；新加的！
         int count = query().eq("user_id", uid)

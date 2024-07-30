@@ -22,4 +22,13 @@ public interface IVoucherOrderService extends IService<VoucherOrder> {
      * @date 2024/7/26 14:56
      */
     Result seckillVoucher(Long voucherId);
+
+    /**
+     * @description 代理使用 - 创建秒杀券订单方法（事务性方法）
+     * @param voucherId 券ID
+     * @return com.hmdp.dto.Result
+     * @author chentianhai.cth
+     * @date 2024/7/30 16:45
+     */
+    Result createVoucherOrder(Long voucherId);
 }
