@@ -645,6 +645,7 @@ public Result createVoucherOrder(Long voucherId) {
 
 **LAST：** 加锁只能解决单机情况下的一人一单并发安全问题，集群模式下就不行了
 
+[<img src="https://s21.ax1x.com/2024/07/30/pkLvwE6.png" alt="pkLvwE6.png" style="zoom: 50%;" />](https://imgse.com/i/pkLvwE6)
 
 
 
@@ -664,6 +665,25 @@ public Result createVoucherOrder(Long voucherId) {
 
 
 
+#### 集群模式
+
+模拟集群模式，两台服务器
+
+在负载均衡的作用下，同时进来两个请求
+
+会进入不同端口的后端服务
+
+不同的服务拿到的不是同一把锁（互斥锁，一个JVM一把锁，锁监视器）
+
+因此存在超卖问题
+
+解决方案 ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ 
 
 
+
+### 分布式锁
+
+多个JVM共用同一个锁监视器
+
+满足分布式系统或集群模式下多线程可见并且互斥的锁
 
